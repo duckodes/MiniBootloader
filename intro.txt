@@ -1,0 +1,21 @@
+ 步驟一：安裝必要工具（只需一次）
+Windows 預設沒有 make 指令，你需要安裝一個開發環境：
+方法一：安裝 MSYS2
+- 前往 https://www.msys2.org 下載並安裝。
+- 安裝後打開「MSYS2 MinGW 32-bit」終端機。
+- 安裝必要工具：
+pacman -S make gcc nasm
+
+步驟二：執行 make all
+- 打開你剛安裝的終端機（例如 MSYS2）。
+- cd 到你的專案資料夾：
+cd /d/GitHub/MiniBootloader
+- 執行：
+make all
+make run
+
+手動註冊 msys
+export PATH=$PATH:/c/i386-elf/gcc/bin
+路徑有空格要加上引號
+反編譯 查看 call 的位置
+$ objdump -D kernel.elf | head
