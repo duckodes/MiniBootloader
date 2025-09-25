@@ -8,9 +8,9 @@ all:
 	$(AS) -f elf32 kernel.asm -o kernel.o
 	$(CC) -m32 -ffreestanding -c kernelC.c -o kernelC.o
 	$(LD) -m elf_i386 -nostdlib -Ttext=0x100000 -e _start kernel.o kernelC.o -o kernel.elf
-	$(OBJCOPY) -O binary kernel.elf kernel.bin
-	dd if=/dev/zero of=os.img bs=512 count=100
-	dd if=boot.bin of=os.img conv=notrunc
+	$(OBJCOPY) -O binary -j .text -j .data -j .rodata kernel.elf kernel.bin
+	dd if=/dev/zero of=os.img bs=512 count=200
+	dd if=boot.bin of=os.img bs=512 seek=0 conv=notrunc
 	dd if=kernel.bin of=os.img bs=512 seek=1 conv=notrunc
 
 clean:

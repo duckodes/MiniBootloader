@@ -1,205 +1,102 @@
 [bits 16]
 [org 0x7C00]
-[global _start]
 
-_start:
+start:
     cli
     xor ax, ax
     mov ds, ax
     mov es, ax
 
-    ; 設定 GDT
-    lgdt [gdt_descriptor]
+    mov ax, 0x0003
+    int 0x10
 
-    ; 開啟保護模式
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
+    mov dh, 10
+    mov dl, 30
+    mov bh, 0
+    mov ah, 2
+    int 0x10
 
-    ; 跳到保護模式
-    jmp 0x08:protected_mode
+    mov si, welcome
+.print_welcome:
+    lodsb
+    cmp al, 0
+    je .progress
+    mov ah, 0x0E
+    mov bh, 0
+    mov bl, 0x0F
+    int 0x10
+    jmp .print_welcome
 
-gdt_start:
-    dq 0x0000000000000000         ; null
-    dq 0x00CF9A000000FFFF         ; code
-    dq 0x00CF92000000FFFF         ; data
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1
-    dd gdt_start
-gdt_end:
+.progress:
+    mov cx, 30
+    xor bx, bx
+.progress_loop:
+    mov dh, 12
+    mov dl, bl
+    add dl, 30
 
-[bits 32]
-protected_mode:
-    mov ax, 0x10
-    mov ds, ax
-    mov ss, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov esp, 0x90000
+    cmp dl, 48
+    jae .skip_update_cursor
 
-    ; 顯示 B（bootloader 執行成功）
-    mov byte [0xB8000], 'B'
-    mov byte [0xB8001], 0x0F
+    mov bh, 0
+    mov ah, 2
+    int 0x10
 
-    ; 切回 real mode 讀磁碟
-    mov eax, cr0
-    and eax, 0xFFFFFFFE
-    mov cr0, eax
-    jmp 0x0000:real_mode
+.skip_update_cursor:
+    push bx
+    mov ah, 0x09
+    mov al, 219
+    mov bl, 0x0A
+    mov cx, 1
+    int 0x10
+    pop bx
 
-[bits 16]
-real_mode:
-    cli
-    xor ax, ax
-    mov ds, ax
-    mov es, ax
+    call delay
+    inc bx
+    cmp bx, 30
+    jl .progress_loop
 
-    ; 讀 kernel 到 0x0000:0x1000
-    mov ax, 0x0000
-    mov es, ax
-    mov bx, 0x1000
+    call delay
 
-    ; 可先重置磁碟，提高成功率
-    mov ah, 0x00
-    mov dl, 0x80
-    int 0x13
-
-    ; 讀 8 sectors 從 LBA 對應 CHS (C=0,H=0,S=2)
-    mov ah, 0x02
-    mov al, 8
-    mov ch, 0
-    mov cl, 2
-    mov dh, 0
-    mov dl, 0x80
-    int 0x13
-    jc disk_error
-
-    ; 啟用 A20（先試 BIOS 快速方法）
-enable_a20_fast:
-    in  al, 0x92
-    test al, 0x02
-    jnz  a20_ok             ; 已啟用
-    or  al, 0x02
-    out 0x92, al
-
-    ; 簡單確認一次
-    in  al, 0x92
-    test al, 0x02
-    jnz  a20_ok
-    jmp enable_a20_bios
-
-enable_a20_bios:
-    mov ax, 0x2401
-    int 0x15
-    jc  enable_a20_kbc
-    cmp ah, 0x00
-    jne enable_a20_kbc
-    jmp a20_ok
-
-enable_a20_kbc:
-    ; 8042 法加 timeout，避免卡死
-    mov cx, 0xFFFF
-.wait_in_empty:
-    in  al, 0x64
-    test al, 0x02
-    jz   .do_disable
-    loop .wait_in_empty
-    jmp a20_ok              ; 超時就跳過
-
-.do_disable:
-    mov al, 0xAD
-    out 0x64, al
-
-    mov cx, 0xFFFF
-.wait_in_empty2:
-    in  al, 0x64
-    test al, 0x02
-    jnz  .wait_in_empty2
-    mov al, 0xD0
-    out 0x64, al
-
-    mov cx, 0xFFFF
-.wait_out_full:
-    in  al, 0x64
-    test al, 0x01
-    jz   .wait_out_full
-    in  al, 0x60
-    or  al, 0x02            ; 設 A20
-    mov ah, al
-
-    mov cx, 0xFFFF
-.wait_in_empty3:
-    in  al, 0x64
-    test al, 0x02
-    jnz  .wait_in_empty3
-    mov al, 0xD1
-    out 0x64, al
-
-    mov cx, 0xFFFF
-.wait_in_empty4:
-    in  al, 0x64
-    test al, 0x02
-    jnz  .wait_in_empty4
-    mov al, ah
-    out 0x60, al
-
-    mov cx, 0xFFFF
-.wait_in_empty5:
-    in  al, 0x64
-    test al, 0x02
-    jnz  .wait_in_empty5
-    mov al, 0xAE
-    out 0x64, al
-
-a20_ok:
-    ; 回到保護模式
-    lgdt [gdt_descriptor]
-    mov eax, cr0
-    or  eax, 1
-    mov cr0, eax
-    jmp 0x08:back_to_pm
-
-; --- 8042 helpers ---
-wait_input_empty:
-    in  al, 0x64
-    test al, 0x02
-    jnz  wait_input_empty
-    ret
-
-wait_output_full:
-    in  al, 0x64
-    test al, 0x01
-    jz   wait_output_full
-    ret
-
-[bits 32]
-back_to_pm:
-    mov ax, 0x10
-    mov ds, ax
-    mov ss, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov esp, 0x90000
-
-    ; 顯示 L（載入成功）
-    mov byte [0xB8002], 'L'
-    mov byte [0xB8003], 0x0F
-
-    ; 搬運 4096 bytes 到 0x100000
-    mov esi, 0x1000
-    mov edi, 0x100000
-    mov ecx, 4096
-    rep movsb
-
-    ; 跳到 kernel
-    jmp 0x08:0x100000
-
-disk_error:
-    mov byte [0xB8004], 'E'
-    mov byte [0xB8005], 0x4C
+    mov ax, 0600h
+    mov bh, 07h
+    mov cx, 0000h
+    mov dx, 184Fh
+    int 10h
+    mov si, desktop
+    mov ah, 0
+    int 16h
+.halt:
+    mov ah, 0
+    int 16h
     hlt
+.print_desktop:
+    lodsb
+    cmp al, 0
+    je .halt
+    mov ah, 0x0E
+    mov bh, 0
+    mov bl, 0x0F
+    int 0x10
+    jmp .print_desktop
+delay:
+    mov cx, 0xFFFF
+    .outer:
+        push cx
+        mov cx, 0xFFF
+    .inner:
+        nop
+        loop .inner
+        pop cx
+        loop .outer
+        ret
+.wait:
+    nop
+    loop .wait
+    ret
+
+welcome db 'WELCOME DUCKODE OS', 0
+desktop db 'Hello Desktop!', 0
 
 times 510 - ($ - $$) db 0
 dw 0xAA55
